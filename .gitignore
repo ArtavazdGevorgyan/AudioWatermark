@@ -1,0 +1,45 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Environment settings
+*.env
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+
+# Distribution / Packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Logs and debug files
+*.log
+*.out
+
+# Machine learning models and large files
+*.h5
+*.ckpt
+
+# Configuration and secrets
+credentials.json
+
+# IDE-specific files
+.vscode/
+.idea/
+
+# Ignore hidden system files
+.DS_Store
+Thumbs.db
+
+# Ignore notebooks outputs
+.ipynb_checkpoints/
+
+# Ignore data cache and runtime files
+.cache/
+
