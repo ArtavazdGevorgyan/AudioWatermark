@@ -26,7 +26,7 @@ import torch
 
 from omegaconf import DictConfig, OmegaConf
 
-# import audioseal
+import audioseal
 from builder import (
     AudioSealDetectorConfig,
     AudioSealWMConfig,
