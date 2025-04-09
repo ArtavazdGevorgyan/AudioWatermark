@@ -1,17 +1,13 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torchaudio
-import numpy as np
-from torch.cuda.amp import autocast, GradScaler
-from audiocraft.losses import TFLoudnessLoss
-
+from losses import TFLoudnessRatio, MelSpectrogramL1Loss, Balancer
 from loader import AudioSeal
-from modules.dataloader import AudioDataLoader
-# from builder import create_generator, create_detector
-# from models import AudioSealWM, AudioSealDetector
+from modules.dataloader import create_dataloader
+from split_reconstruct_audio import reconstruct_audio
+from tqdm import tqdm
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
 config = {
     "nbits": 32,
     "sample_rate": 16000,
@@ -27,157 +23,99 @@ config = {
 }
 
 
-# Loss Modules
-class MelLoss(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.mel_fn = torchaudio.transforms.MelSpectrogram(
-            sample_rate=16000, n_fft=1024, n_mels=80
-        )
-        self.loss = nn.L1Loss()
-
-    def forward(self, original, watermarked):
-        return self.loss(self.mel_fn(original), self.mel_fn(watermarked))
-
-
-# class LoudnessLoss(nn.Module):
-#     def __init__(self, frame_size=1024, hop_length=256):
-#         super().__init__()
-#         self.frame_size = frame_size
-#         self.hop_length = hop_length
-#         self.loss = nn.L1Loss()
-
-#     def forward(self, original, watermarked):
-#         def calc_rms(x):
-#             return torch.sqrt(torch.mean(x**2, dim=-1))
-
-#         orig_rms = calc_rms(original.unfold(-1, self.frame_size, self.hop_length))
-#         wm_rms = calc_rms(watermarked.unfold(-1, self.frame_size, self.hop_length))
-#         return self.loss(orig_rms, wm_rms)
-
-
-# generator, discriminator, detector, dataloader,
 generator = AudioSeal.load_generator("./cards/audioseal_wm_16bits.yaml", 16)
 generator.to(device)
-# discriminator.to(device)
-generator.get_watermark(torch.ones((2, 1, 1000)), sample_rate=16000)
-
 detector = AudioSeal.load_detector("./cards/audioseal_wm_16bits.yaml", 16)
 detector.to(device)
-# generator.train()
-# discriminator.train()
-# detector.train()
-
-
-# Optimizers
-opt = optim.Adam(generator.parameters(), lr=config["lr"])
-# det_opt = optim.Adam(detector.parameters(), lr=config["lr"])
-
-# Loss Functions
+gen_opt = optim.Adam(generator.parameters(), lr=config["lr"])
+det_opt = optim.Adam(detector.parameters(), lr=config["lr"])
+mel_criterion = MelSpectrogramL1Loss(sample_rate=16000).to(device)
+loudness_criterion = TFLoudnessRatio().to(device)
 bce_loss = nn.BCELoss()
-mel_criterion = MelLoss().to(device)
-loudness_criterion = TFLoudnessLoss().to(device)
-scaler = GradScaler()
-
-# Data Loader
-loader = AudioDataLoader("/path/to/audio", config["batch_size"])
-train_loader = loader.get_dataloader()
 
 
-# Training Loop
+train_loader = create_dataloader(
+    "/Users/artavazdgevorgyan/Downloads/audioseal_dataset/train_wav"
+)
+
+weights = {
+    "l1_loss": 1.0,
+    "mel_loss": 1.0,
+    "loudness_loss": 1.0,
+    "gen_loss": 1.0,
+    "det_loss": 1.0,
+    "msg_loss": 1.0,
+}
+gen_balancer = Balancer(weights=weights)
+raw_balancer = Balancer(weights={"det_loss": 1.0})
+
 for epoch in range(config["num_epochs"]):
-    for batch_idx, (reconstructed_audio, audio) in enumerate(train_loader):
-        # real_audios = 
-        # audios_to_watermark = 
-    
-        audio_to_watermark = audio.to(device)
-        reconstructed_audio = reconstructed_audio.to(device)
-        batch_size = audio_to_watermark.size(0)
-        
-        total_loss = 0
-        watermark_flag = np.random.random() < 0.5
-        if watermark_flag:
-            # Generate random message
-            msg = torch.randint(0, 2, (1, config["nbits"]), device=device).float()
-            msg_repeated = msg.repeat(batch_size, 1)
-            
-            # --- Detector Training ---
+    total_epoch_loss = 0
+    for idx in tqdm(range(len(train_loader))):
+        raw_audio, segments, msg, watermark_flag = train_loader[idx]
+        labels = (
+            torch.tensor([1 - watermark_flag, watermark_flag])
+            .to(device)
+            .requires_grad_()
+        )
+        reconstructed_audio = raw_audio.to(device).requires_grad_()
+        raw_audio = raw_audio.unsqueeze(0).to(device).requires_grad_()
+        msg = msg.to(device).requires_grad_()
+
+        gradients = []
+        loss_functions = {}
+
+        if 1:
+            print("Watermarking")
+            segments = segments.to(device)
+
             with torch.no_grad():
-                generated_audio = generator(audio_to_watermark, config["sample_rate"], msg)
-                # ^ does this wm_audio = audios_to_watermark + config["alpha"] * watermark
-            
-            reconstructed_gen_audio = 
-            
-            l1_loss = torch.mean(torch.abs(generated_audio - audio_to_watermark))
-            mel_loss = mel_criterion(reconstructed_gen_audio, reconstructed_audio)
-            loudness_loss = loudness_criterion(reconstructed_gen_audio, reconstructed_audio)
-            total_loss += l1_loss + mel_loss + loudness_loss
-            
-            audio = generated_audio
+                generated_audios = generator(segments, config["sample_rate"], msg)
 
-        # # Detector forward
-        # det_real, _ = detector(audios)
-        is_watermarked_pred, msg_pred = detector(audio)
+            print("something")
+            reconstructed_audio = reconstruct_audio(generated_audios, 16_000)
+            reconstructed_audio = reconstructed_audio.requires_grad_()
+            raw_audio = raw_audio[:, : reconstructed_audio.shape[1]].requires_grad_()
+            print(reconstructed_audio.shape)
+            print(raw_audio.shape)
 
-        # Detection loss
+            l1_loss = torch.mean(torch.abs(reconstructed_audio - raw_audio))
+            mel_loss = mel_criterion(reconstructed_audio, raw_audio)
+            loudness_loss = loudness_criterion(
+                reconstructed_audio.unsqueeze(0),
+                raw_audio.unsqueeze(0),
+            )
+
+            loss_functions["l1_loss"] = l1_loss
+            loss_functions["mel_loss"] = mel_loss
+            loss_functions["loudness_loss"] = loudness_loss
+
+        is_watermarked_pred, msg_pred = detector(reconstructed_audio.unsqueeze(0))
+        is_watermarked_pred = is_watermarked_pred.to(device).requires_grad_()
+        det_loss = bce_loss(torch.mean(is_watermarked_pred.squeeze(0), axis=1), labels)
+        loss_functions["det_loss"] = det_loss
+
         if watermark_flag:
-            gen_loss = torch.mean(torch.relu(1 - is_watermarked_pred))
-            det_loss = torch.mean(torch.relu(1 + is_watermarked_pred))
-            
-            total_loss += gen_loss + det_loss
+            gen_loss = bce_loss(
+                torch.mean(is_watermarked_pred.squeeze(0), axis=1), 1 - labels
+            )
+            msg_pred = msg_pred.to(device).requires_grad_()
+
+            msg_loss = bce_loss(msg_pred.squeeze(0), msg[0])
+            loss_functions["gen_loss"] = gen_loss
+            loss_functions["msg_loss"] = msg_loss
+
+        if watermark_flag:
+            total_loss = gen_balancer.backward(loss_functions, reconstructed_audio)
+            gen_opt.zero_grad()
+            gen_opt.step()
         else:
-            det_loss = torch.mean(torch.relu(1 - is_watermarked_pred))
-            total_loss += det_loss
-        
-        msg_loss = bce_loss(msg_pred, msg)
-        total_loss += msg_loss
+            total_loss = raw_balancer.backward(loss_functions, reconstructed_audio)
 
-        # Update detector
-        opt.zero_grad()
-        scaler.scale(total_loss).backward()
-        scaler.step(opt)
+        det_opt.zero_grad()
+        det_opt.step()
 
-        # --- Generator Training ---
-        # Generate watermark
-        # watermark = generator.get_watermark(audios_to_watermark, config["sample_rate"], msg)
-        # wm_audio = audios_to_watermark + config["alpha"] * watermark
+        torch.mps.empty_cache()
+        print(idx)
 
-        # L1 Loss on watermark
-        
-
-        # Adversarial Losses
-        # det_pred, msg_pred = detector(wm_audio)
-        # det_loss_gen = bce_loss(
-        #     det_pred[:, 1, :].mean(1), torch.ones(batch_size, device=device)
-        # )
-        # msg_loss_gen = bce_loss(msg_pred, msg)
-
-        # # Total Generator Loss
-        # total_gen_loss = (
-        #     config["lambda_l1"] * l1_loss
-        #     + config["lambda_mel"] * mel_loss
-        #     + config["lambda_loudness"] * loudness_loss
-        #     + config["lambda_det"] * det_loss_gen
-        #     + config["lambda_msg"] * msg_loss_gen
-        # )
-
-        # # Update generator
-        # gen_opt.zero_grad()
-        # scaler.scale(total_gen_loss).backward()
-        # scaler.step(gen_opt)
-        # scaler.update()
-
-        # # Logging
-        # if batch_idx % 100 == 0:
-        #     print(
-        #         f"""Epoch {epoch+1}/{config["num_epochs"]} Batch {batch_idx}
-        #         Det Loss: {total_det_loss.item():.4f}
-        #         Gen Loss: {total_gen_loss.item():.4f}
-        #         L1: {l1_loss.item():.4f} | Mel: {mel_loss.item():.4f}
-        #         Loud: {loudness_loss.item():.4f} | DetG: {det_loss_gen.item():.4f}
-        #         MsgG: {msg_loss_gen.item():.4f}"""
-        #     )
-
-# Save Models
-torch.save(generator.state_dict(), "generator.pth")
-torch.save(detector.state_dict(), "detector.pth")
+    print(f"Epoch [{epoch+1}/{config['num_epochs']}], Total Loss: {total_loss:.4f}")

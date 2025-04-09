@@ -19,10 +19,10 @@ def split_audio(waveform, sample_rate, segment_length_ms=100, overlap=0.5):
     return segments.unsqueeze(1)
 
 
-audio_path = "/Users/artavazdgevorgyan/Desktop/segment_000.wav"
-waveform, sr = torchaudio.load(audio_path)
-splitted_audio = split_audio(waveform, sr)
-# print(splitted_audio)
+# audio_path = "/Users/artavazdgevorgyan/Desktop/segment_000.wav"
+# waveform, sr = torchaudio.load(audio_path)
+# splitted_audio = split_audio(waveform, sr)
+# # print(splitted_audio)
 
 
 def reconstruct_audio(segments, sample_rate, overlap=0.5):

@@ -37,12 +37,9 @@ loudness_criterion = TFLoudnessRatio().to(device)
 bce_loss = nn.BCELoss()
 # scaler = GradScaler()
 
-# train_loader = AudioWatermarkDataset(
-#     "/Users/artavazdgevorgyan/Downloads/audioseal_dataset/WAV_format/train_wav",
-#     config["batch_size"],
-# )
+
 train_loader = create_dataloader(
-    "/Users/artavazdgevorgyan/Downloads/audioseal_dataset/WAV_format/train_wav"
+    "/Users/artavazdgevorgyan/Downloads/audioseal_dataset/train_wav"
 )
 
 weights = {
@@ -59,15 +56,15 @@ raw_balancer = Balancer(weights={"det_loss": 1.0})
 for epoch in range(config["num_epochs"]):
     total_epoch_loss = 0
     for idx in tqdm(range(len(train_loader))):
-        print(1)
-        raw_audio, segments, msg, watermark_flag = train_loader.__getitem__(idx)
-        print(2)
-        labels = torch.full((len(segments),), 1 - watermark_flag)
-        print(3)
+        raw_audio, segments, msg, watermark_flag = train_loader[idx]
+        # labels = torch.full((len(segments),), 1 - watermark_flag)
+        labels = (
+            torch.tensor([1 - watermark_flag, watermark_flag])
+            .to(device)
+            .requires_grad_()
+        )
         reconstructed_audio = raw_audio.to(device).requires_grad_()
-        print(4)
         raw_audio = raw_audio.unsqueeze(0).to(device).requires_grad_()
-        print(5)
         msg = msg.to(device).requires_grad_()
         # batch_size = len(segments)
         # audio_to_watermark = audio.to(device)
@@ -77,7 +74,7 @@ for epoch in range(config["num_epochs"]):
         gradients = []
         loss_functions = {}
 
-        if True:
+        if 0:
             print("Watermarking")
             segments = segments.to(device)
 
@@ -85,9 +82,9 @@ for epoch in range(config["num_epochs"]):
                 generated_audios = generator(segments, config["sample_rate"], msg)
 
             print("something")
-            reconstructed_audio = reconstruct_audio(generated_audios, 16000)
+            reconstructed_audio = reconstruct_audio(generated_audios, 16_000)
             reconstructed_audio = reconstructed_audio.requires_grad_()
-            # reconstructed_audio = reconstructed_audio.to(device)
+            raw_audio = raw_audio[:, : reconstructed_audio.shape[1]].requires_grad_()
             print(reconstructed_audio.shape)
             print(raw_audio.shape)
 
@@ -95,27 +92,31 @@ for epoch in range(config["num_epochs"]):
             mel_loss = mel_criterion(reconstructed_audio, raw_audio)
             loudness_loss = loudness_criterion(
                 reconstructed_audio.unsqueeze(0),
-                raw_audio.unsqueeze(0),  ######### ES Harca
+                raw_audio.unsqueeze(0),
             )
 
             loss_functions["l1_loss"] = l1_loss
             loss_functions["mel_loss"] = mel_loss
             loss_functions["loudness_loss"] = loudness_loss
 
-        is_watermarked_pred, msg_pred = detector(
-            reconstructed_audio.unsqueeze(0)
-        )  # es el harc toxenq
-        # det_loss = bce_loss(is_watermarked_pred, labels)##################es uncomment
+        # if watermark_flag:
+        #     is_watermarked_pred, msg_pred = detector(reconstructed_audio.unsqueeze(0))
+        # else:
+        is_watermarked_pred, msg_pred = detector(reconstructed_audio)
+        is_watermarked_pred = is_watermarked_pred.to(device).requires_grad_()
+        det_loss = bce_loss(torch.mean(is_watermarked_pred.squeeze(0), axis=1), labels)
         # gen_loss = torch.mean(torch.relu(1 - is_watermarked_pred))
         # det_loss = torch.mean(torch.relu(1 + is_watermarked_pred))
-        # loss_functions["det_loss"] = det_loss##################es uncomment
+        loss_functions["det_loss"] = det_loss
 
         if watermark_flag:
-            # gen_loss = bce_loss(is_watermarked_pred, 1 - labels)##################es uncomment
+            gen_loss = bce_loss(
+                torch.mean(is_watermarked_pred.squeeze(0), axis=1), 1 - labels
+            )
             msg_pred = msg_pred.to(device).requires_grad_()
 
             msg_loss = bce_loss(msg_pred.squeeze(0), msg[0])
-            # loss_functions["gen_loss"] = gen_loss##################es uncomment
+            loss_functions["gen_loss"] = gen_loss
             loss_functions["msg_loss"] = msg_loss
 
         if watermark_flag:
@@ -128,7 +129,7 @@ for epoch in range(config["num_epochs"]):
         det_opt.zero_grad()
         det_opt.step()
 
-        del raw_audio, segments, msg, reconstructed_audio, msg_pred, is_watermarked_pred
+        torch.mps.empty_cache()
         print(idx)
         # if idx % 100 == 0:
         #     print(
@@ -136,3 +137,6 @@ for epoch in range(config["num_epochs"]):
         #     )
 
     print(f"Epoch [{epoch+1}/{config['num_epochs']}], Total Loss: {total_loss:.4f}")
+
+
+############## grel accuracy vor message-nery irar het hamemati
