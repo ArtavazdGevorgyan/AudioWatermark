@@ -12,6 +12,8 @@ venv/
 ENV/
 env.bak/
 pytorch_env/
+runs/
+
 # Distribution / Packaging
 build/
 dist/

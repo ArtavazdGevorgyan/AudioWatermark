@@ -5,6 +5,7 @@ import torchaudio
 from torch.utils.data import Dataset
 from torchaudio.transforms import Resample
 from split_reconstruct_audio import split_audio
+from torch.utils.data import random_split
 
 
 class AudioWatermarkDataset(Dataset):
@@ -41,6 +42,14 @@ class AudioWatermarkDataset(Dataset):
             return waveform.squeeze(0), segments, msg, 1.0
 
 
-def create_dataloader(data_dir):
+def create_dataloader(data_dir, val_split=0.2):
     dataset = AudioWatermarkDataset(data_dir)
-    return dataset
+    val_size = int(len(dataset) * val_split)
+    train_size = len(dataset) - val_size
+    train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+    return train_dataset, val_dataset
+
+
+# def create_dataloader(data_dir):
+#     dataset = AudioWatermarkDataset(data_dir)
+#     return dataset

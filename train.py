@@ -34,7 +34,7 @@ loudness_criterion = TFLoudnessRatio().to(device)
 bce_loss = nn.BCELoss()
 
 
-train_loader = create_dataloader(
+train_loader, val_loader = create_dataloader(
     "/Users/artavazdgevorgyan/Downloads/audioseal_dataset/train_wav"
 )
 
@@ -52,20 +52,20 @@ raw_balancer = Balancer(weights={"det_loss": 1.0})
 for epoch in range(config["num_epochs"]):
     total_epoch_loss = 0
     for idx in tqdm(range(len(train_loader))):
-        raw_audio, segments, msg, watermark_flag = train_loader[idx]
+        raw_audio, segments, msg, watermark_flag = train_loader.__getitem__(idx)
         labels = (
             torch.tensor([1 - watermark_flag, watermark_flag])
             .to(device)
             .requires_grad_()
         )
-        reconstructed_audio = raw_audio.to(device).requires_grad_()
         raw_audio = raw_audio.unsqueeze(0).to(device).requires_grad_()
+        reconstructed_audio = raw_audio.to(device).requires_grad_()
         msg = msg.to(device).requires_grad_()
 
         gradients = []
         loss_functions = {}
 
-        if 1:
+        if watermark_flag:
             print("Watermarking")
             segments = segments.to(device)
 
@@ -90,7 +90,12 @@ for epoch in range(config["num_epochs"]):
             loss_functions["mel_loss"] = mel_loss
             loss_functions["loudness_loss"] = loudness_loss
 
-        is_watermarked_pred, msg_pred = detector(reconstructed_audio.unsqueeze(0))
+        print(reconstructed_audio.shape)
+        print(raw_audio.shape)
+
+        is_watermarked_pred, msg_pred = detector(
+            reconstructed_audio.unsqueeze(0), sample_rate=16000
+        )
         is_watermarked_pred = is_watermarked_pred.to(device).requires_grad_()
         det_loss = bce_loss(torch.mean(is_watermarked_pred.squeeze(0), axis=1), labels)
         loss_functions["det_loss"] = det_loss
