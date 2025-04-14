@@ -10,7 +10,7 @@ from tqdm import tqdm
 device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
 config = {
     "nbits": 32,
-    "sample_rate": 16000,
+    "sample_rate": 16_000,
     "batch_size": 32,
     "lr": 1e-4,
     "num_epochs": 100,
@@ -29,7 +29,7 @@ detector = AudioSeal.load_detector("./cards/audioseal_wm_16bits.yaml", 16)
 detector.to(device)
 gen_opt = optim.Adam(generator.parameters(), lr=config["lr"])
 det_opt = optim.Adam(detector.parameters(), lr=config["lr"])
-mel_criterion = MelSpectrogramL1Loss(sample_rate=16000).to(device)
+mel_criterion = MelSpectrogramL1Loss(sample_rate=config["sample_rate"]).to(device)
 loudness_criterion = TFLoudnessRatio().to(device)
 bce_loss = nn.BCELoss()
 
@@ -73,7 +73,9 @@ for epoch in range(config["num_epochs"]):
                 generated_audios = generator(segments, config["sample_rate"], msg)
 
             print("something")
-            reconstructed_audio = reconstruct_audio(generated_audios, 16_000)
+            reconstructed_audio = reconstruct_audio(
+                generated_audios, config["sample_rate"]
+            )
             reconstructed_audio = reconstructed_audio.requires_grad_()
             raw_audio = raw_audio[:, : reconstructed_audio.shape[1]].requires_grad_()
             print(reconstructed_audio.shape)
@@ -94,7 +96,7 @@ for epoch in range(config["num_epochs"]):
         print(raw_audio.shape)
 
         is_watermarked_pred, msg_pred = detector(
-            reconstructed_audio.unsqueeze(0), sample_rate=16000
+            reconstructed_audio.unsqueeze(0), sample_rate=config["sample_rate"]
         )
         is_watermarked_pred = is_watermarked_pred.to(device).requires_grad_()
         det_loss = bce_loss(torch.mean(is_watermarked_pred.squeeze(0), axis=1), labels)
