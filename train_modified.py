@@ -40,7 +40,21 @@ bce_loss = nn.BCELoss()
 # scaler = GradScaler()
 
 
-def batch_step(watermark_flag, raw_audio, segments, msg, labels, step, sample_rate, generator, detector, raw_balancer, gen_balancer, train=True):
+def batch_step(
+    watermark_flag,
+    raw_audio,
+    segments,
+    msg,
+    reconstructed_audio,
+    labels,
+    step,
+    sample_rate,
+    generator,
+    detector,
+    raw_balancer,
+    gen_balancer,
+    train=True,
+):
     loss_functions = {}
     if watermark_flag:
         segments = segments.to(device)
@@ -50,7 +64,7 @@ def batch_step(watermark_flag, raw_audio, segments, msg, labels, step, sample_ra
                 generated_audios = generator(segments, sample_rate, msg)
         else:
             generated_audios = generator(segments, sample_rate, msg)
-            
+
         reconstructed_audio = reconstruct_audio(generated_audios, sample_rate)
         reconstructed_audio = reconstructed_audio.requires_grad_()
         raw_audio = raw_audio[:, : reconstructed_audio.shape[1]].requires_grad_()
@@ -65,7 +79,7 @@ def batch_step(watermark_flag, raw_audio, segments, msg, labels, step, sample_ra
         loss_functions["l1_loss"] = l1_loss
         loss_functions["mel_loss"] = mel_loss
         loss_functions["loudness_loss"] = loudness_loss
-        
+
     if not train:
         with torch.no_grad():
             is_watermarked_pred, msg_pred = detector(
@@ -94,7 +108,7 @@ def batch_step(watermark_flag, raw_audio, segments, msg, labels, step, sample_ra
         total_loss = gen_balancer.backward(loss_functions, reconstructed_audio)
         accuracy = ((msg_pred > 0.5).float() == msg).float().mean().item()
         print(f"Message Accuracy: {accuracy:.4f}")
-        writer.add_scalar(f"Accuracy/{"train" if train else "val"})", accuracy, step)
+        writer.add_scalar(f"Accuracy/{'train' if train else 'val'})", accuracy, step)
         if train:
             gen_opt.zero_grad()
             gen_opt.step()
@@ -105,7 +119,7 @@ def batch_step(watermark_flag, raw_audio, segments, msg, labels, step, sample_ra
             det_opt.step()
 
     # After calculating total_loss
-    writer.add_scalar(f"Loss/{"train" if train else "val"}", total_loss.item(), step)
+    writer.add_scalar(f"Loss/{'train' if train else 'val'}", total_loss.item(), step)
 
 
 train_loader, val_loader = create_dataloader(
@@ -144,8 +158,22 @@ for epoch in range(config["num_epochs"]):
         raw_audio = raw_audio.unsqueeze(0).to(device).requires_grad_()
         reconstructed_audio = raw_audio.to(device).requires_grad_()
         msg = msg.to(device).requires_grad_()
-        
-        batch_step(watermark_flag, raw_audio, segments, msg, labels, step, config["sample_rate"], generator, detector, raw_balancer, gen_balancer, train=True)
+
+        batch_step(
+            watermark_flag,
+            raw_audio,
+            segments,
+            msg,
+            reconstructed_audio,
+            labels,
+            step,
+            config["sample_rate"],
+            generator,
+            detector,
+            raw_balancer,
+            gen_balancer,
+            train=True,
+        )
         torch.mps.empty_cache()
         step += 1
 
@@ -157,8 +185,22 @@ for epoch in range(config["num_epochs"]):
                 labels = torch.tensor([1 - watermark_flag, watermark_flag]).to(device)
                 raw_audio = raw_audio.unsqueeze(0).to(device)
                 msg = msg.to(device)
-                
-                batch_step(watermark_flag, raw_audio, segments, msg, labels, step, config["sample_rate"], generator, detector, raw_balancer, gen_balancer, train=False)
+
+                batch_step(
+                    watermark_flag,
+                    raw_audio,
+                    segments,
+                    msg,
+                    reconstructed_audio,
+                    labels,
+                    step,
+                    config["sample_rate"],
+                    generator,
+                    detector,
+                    raw_balancer,
+                    gen_balancer,
+                    train=False,
+                )
                 val_idx += 1
 
     # Save checkpoint
