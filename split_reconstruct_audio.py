@@ -1,7 +1,7 @@
 import torch
 
 
-def split_audio(waveform, sample_rate, segment_length_ms=100, overlap=0.5):
+def split_audio(waveform, sample_rate, segment_length_ms=10, overlap=0.5):
     segment_length = int((segment_length_ms / 1000) * sample_rate)
     step = int(segment_length * (1 - overlap))
 
