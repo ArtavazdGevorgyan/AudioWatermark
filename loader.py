@@ -71,7 +71,7 @@ def _get_cache_dir(env_names: List[str]):
 
 def load_model_checkpoint(
     model_path: Union[Path, str],
-    device: Union[str, torch.device] = "cpu",
+    device: Union[str, torch.device] = "mps",  # "cpu",
 ):
     if Path(model_path).is_file():
         return torch.load(model_path, map_location=device)

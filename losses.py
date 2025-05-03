@@ -95,13 +95,13 @@ class TFLoudnessRatio(nn.Module):
         sample_rate: int = 16000,
         segment: float = 0.5,
         overlap: float = 0.5,
-        n_bands: int = 1,  ##########################es poxeluc ashxatec
+        n_bands: int = 10,  ##########################es poxeluc ashxatec
         clip_min: float = -100,
         temperature: float = 1.0,
     ):
         super().__init__()
         self.sample_rate = sample_rate
-        self.segment = segment
+        self.segment = segment  ############################es karoxa pti poxvi?
         self.overlap = overlap
         self.clip_min = clip_min
         self.temperature = temperature
@@ -283,12 +283,29 @@ class Balancer:
         return self._metrics
 
     def backward(
-        self, losses: tp.Dict[str, torch.Tensor], input: torch.Tensor
+        self,
+        losses: tp.Dict[str, torch.Tensor],
+        raw_input: torch.Tensor,
+        reconstructed_input: torch.Tensor,
+        segments: torch.Tensor,
+        msg: torch.Tensor,
+        train: bool = True,
     ) -> torch.Tensor:
 
         norms = {}
         grads = {}
         for name, loss in losses.items():
+            print(f"{name}: {loss}")
+
+            if name in ["mel_loss", "loudness_loss", "l1_loss"]:
+                input = raw_input
+            elif name == "gen_loss":
+                input = segments
+            elif name == "msg_loss":
+                input = msg
+            elif name == "det_loss":
+                input = reconstructed_input
+            # input {input}")
             # Compute partial derivative of the less with respect to the input.
             (grad,) = autograd.grad(loss, [input], retain_graph=True)
             if self.per_batch_item:
@@ -320,7 +337,7 @@ class Balancer:
         assert total_weights > 0.0
         desired_ratios = {k: w / total_weights for k, w in self.weights.items()}
 
-        out_grad = torch.zeros_like(input)
+        # out_grad = torch.zeros_like(input)
         effective_loss = torch.tensor(0.0, device=input.device, dtype=input.dtype)
         for name, avg_norm in avg_norms.items():
             if self.balance_grads:
@@ -331,8 +348,12 @@ class Balancer:
             else:
                 # We just do regular weighted sum of the gradients.
                 scale = self.weights[name]
-            out_grad.add_(grads[name], alpha=scale)
+            # out_grad.add_(grads[name], alpha=scale)
             effective_loss += scale * losses[name].detach()
-        # Send the computed partial derivative with respect to the output of the model to the model.
-        input.backward(out_grad)
+
+            # Send the computed partial derivative with respect to the output of the model to the model.
+        print(f"effective_loss: {effective_loss}")
+        effective_loss = effective_loss.requires_grad_(train)
+        if train:
+            effective_loss.backward()
         return effective_loss

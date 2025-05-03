@@ -4,7 +4,7 @@ import random
 
 
 def split_audio_random(
-    input_path, output_folder, segment_index, min_length=180, max_length=300
+    input_path, output_folder, segment_index, min_length=5, max_length=10
 ):
     audio = AudioSegment.from_file(input_path, format="ogg")
     total_duration = len(audio) / 1000  # Convert to seconds
@@ -23,7 +23,7 @@ def split_audio_random(
         output_path = os.path.join(output_folder, f"segment_{segment_index:03d}.wav")
         segment.export(output_path, format="wav")
 
-        print(f"Exported: {output_path} ({segment_length:.2f}s)")
+        # print(f"Exported: {output_path} ({segment_length:.2f}s)")
 
         start_time = end_time
         segment_index += 1
@@ -43,6 +43,6 @@ def process_folder(input_folder, output_folder):
         )
 
 
-input_folder = "INPUT_FOLDER_PATH"
-output_folder = "OUTPUT_FOLDER_PATH"
+input_folder = "/Users/artavazdgevorgyan/Desktop"
+output_folder = "/Users/artavazdgevorgyan/Desktop/untitled folder"
 process_folder(input_folder, output_folder)

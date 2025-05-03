@@ -23,6 +23,7 @@ dist/
 # Logs and debug files
 *.log
 *.out
+T_M2.py
 
 # Machine learning models and large files
 *.h5
