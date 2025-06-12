@@ -13,6 +13,7 @@ ENV/
 env.bak/
 pytorch_env/
 runs/
+Presentation & Oppinions/
 
 # Distribution / Packaging
 build/
@@ -24,6 +25,7 @@ dist/
 *.log
 *.out
 T_M2.py
+segment_09587.wav
 
 # Machine learning models and large files
 *.h5

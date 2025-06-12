@@ -64,7 +64,7 @@ def load_checkpoint(checkpoint_path, generator, detector, gen_opt, det_opt):
     detector.load_state_dict(checkpoint["detector_state_dict"])
     gen_opt.load_state_dict(checkpoint["gen_opt_state_dict"])
     det_opt.load_state_dict(checkpoint["det_opt_state_dict"])
-    start_epoch = checkpoint["epoch"] + 1  # Start from next epoch
+    start_epoch = checkpoint["epoch"] + 1
     best_loss = checkpoint.get("loss", float("inf"))
     print(f"Resuming training from epoch {start_epoch}")
     return start_epoch, best_loss
@@ -78,7 +78,6 @@ def find_latest_checkpoint(checkpoint_dir):
     return latest_checkpoint
 
 
-# Model loading with error handling
 try:
     generator = AudioSeal.load_generator("./cards/audioseal_wm_16bits.yaml", 16)
     generator.to(device)
@@ -103,7 +102,7 @@ os.makedirs(checkpoint_dir, exist_ok=True)
 global moving_accuracy
 moving_accuracy = 0.0
 
-# Try to load latest checkpoint
+# Load latest checkpoint
 start_epoch = 0
 best_val_loss = float("inf")
 latest_checkpoint = find_latest_checkpoint(checkpoint_dir)
@@ -134,7 +133,6 @@ def batch_step(
 ):
     loss_functions = {}
 
-    # Ensure tensors are on the correct device
     raw_audio = raw_audio.to(device).requires_grad_(train)
     segments = (
         segments.to(device).requires_grad_(train) if segments is not None else None
@@ -184,7 +182,6 @@ def batch_step(
         tmp = labels_acc * torch.round(is_watermarked_pred.squeeze(0))
         print(f"Detector Accuracy: {torch.mean(tmp)*2:.4f}")
 
-        # Properly handle predictions
         is_watermarked_pred = is_watermarked_pred.to(device)
         det_loss = weights["det_loss"] * cat_cross_loss(
             torch.mean(is_watermarked_pred, axis=2), labels.float().unsqueeze(0)
@@ -236,7 +233,6 @@ def batch_step(
     return total_loss.item()
 
 
-# Data loading with error handling
 try:
     train_loader, val_loader = create_dataloader(
         "/Users/artavazdgevorgyan/Desktop/untitled folder"
@@ -253,7 +249,6 @@ writer = SummaryWriter(log_dir="runs/audioseal_experiment")
 gen_balancer = Balancer(weights=weights)
 raw_balancer = Balancer(weights={"det_loss": 10.0})
 
-# Training loop
 step = 0
 best_val_loss = float("inf")
 
@@ -273,7 +268,7 @@ for epoch in range(start_epoch, config["num_epochs"]):
                 raw_audio.unsqueeze(0),
                 segments,
                 msg,
-                raw_audio.unsqueeze(0),  # Initial reconstruction is just the input
+                raw_audio.unsqueeze(0),
                 labels,
                 step,
                 config["sample_rate"],
@@ -291,9 +286,7 @@ for epoch in range(start_epoch, config["num_epochs"]):
                 detector.eval()
                 val_loss = 0
                 with torch.no_grad():
-                    for val_idx in range(
-                        min(10, len(val_loader))
-                    ):  # Validate on 10 samples
+                    for val_idx in range(min(10, len(val_loader))):
                         raw_audio, segments, msg, watermark_flag = val_loader[val_idx]
                         labels = torch.tensor(
                             [1 - watermark_flag, watermark_flag], device=device
